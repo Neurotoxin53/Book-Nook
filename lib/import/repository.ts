@@ -10,6 +10,7 @@ type ExistingImportMatch = {
   user_edited_at: string | null;
   finished_at: string | null;
   source: string;
+  deleted_at: string | null;
 };
 
 const timestamp = () => new Date().toISOString();
@@ -24,7 +25,7 @@ function readingStatus(row: GoodreadsNormalizedRow): ReadingStatus {
 async function findExisting(database: D1Database, userId: string, row: GoodreadsNormalizedRow) {
   if (row.isbn13 || row.isbn10) {
     const byIsbn = await database.prepare(
-      `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source
+      `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source, l.deleted_at
        FROM library_entry l JOIN book_edition e ON e.id = l.edition_id JOIN review r ON r.library_entry_id = l.id
        WHERE l.user_id = ? AND l.deleted_at IS NULL
          AND ((? IS NOT NULL AND e.isbn13 = ?) OR (? IS NOT NULL AND e.isbn10 = ?))
@@ -34,14 +35,14 @@ async function findExisting(database: D1Database, userId: string, row: Goodreads
   }
   if (row.sourceId) {
     const bySourceId = await database.prepare(
-      `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source
+      `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source, l.deleted_at
        FROM library_entry l JOIN review r ON r.library_entry_id = l.id
-       WHERE l.user_id = ? AND l.source = 'goodreads' AND l.source_record_id = ? AND l.deleted_at IS NULL LIMIT 1`,
+       WHERE l.user_id = ? AND l.source = 'goodreads' AND l.source_record_id = ? LIMIT 1`,
     ).bind(userId, row.sourceId).first<ExistingImportMatch>();
     if (bySourceId) return bySourceId;
   }
   const byFingerprint = await database.prepare(
-    `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source
+    `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source, l.deleted_at
      FROM import_row ir
      JOIN import_job j ON j.id = ir.import_job_id
      JOIN library_entry l ON l.id = ir.library_entry_id
@@ -53,7 +54,7 @@ async function findExisting(database: D1Database, userId: string, row: Goodreads
 
   if (row.confirmedTitleAuthor) {
     return database.prepare(
-      `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source
+      `SELECT l.id AS entry_id, r.rating, r.body, r.user_edited_at, l.finished_at, l.source, l.deleted_at
        FROM library_entry l
        JOIN book_edition e ON e.id = l.edition_id
        JOIN book_work w ON w.id = e.work_id
@@ -102,6 +103,31 @@ export async function startImportJob(userId: string, totalRows: number) {
   return jobId;
 }
 
+export async function findResumableImportJob(
+  userId: string,
+  totalRows: number,
+  rowNumber: number,
+  fingerprint: string,
+) {
+  return withDatabase(async (database) => {
+    const job = await database.prepare(
+      `SELECT j.id
+       FROM import_job j
+       JOIN import_row ir ON ir.import_job_id = j.id
+       WHERE j.user_id = ?
+         AND j.source = 'goodreads'
+         AND j.status = 'processing'
+         AND j.undone_at IS NULL
+         AND j.total_rows = ?
+         AND ir.row_number = ?
+         AND ir.fingerprint = ?
+       ORDER BY j.created_at DESC
+       LIMIT 1`,
+    ).bind(userId, totalRows, rowNumber, fingerprint).first<{ id: string }>();
+    return job?.id ?? null;
+  });
+}
+
 export async function importGoodreadsChunk(
   userId: string,
   jobId: string,
@@ -131,6 +157,16 @@ export async function importGoodreadsChunk(
 
       const existing = await findExisting(database, userId, row);
       if (existing) {
+        if (existing.deleted_at) {
+          await database.batch([
+            database.prepare(
+              'UPDATE library_entry SET deleted_at = NULL, updated_at = ? WHERE id = ? AND user_id = ?',
+            ).bind(timestamp(), existing.entry_id, userId),
+            importRowStatement(database, jobId, row, 'imported', existing.entry_id),
+            database.prepare('UPDATE import_job SET imported_rows = imported_rows + 1 WHERE id = ?').bind(jobId),
+          ]);
+          return;
+        }
         const unchanged = existing.rating === (row.rating ?? 0)
           && existing.body === row.review
           && (existing.finished_at ?? '') === (row.dateRead ?? '');
