@@ -3,6 +3,18 @@
 All notable changes to My Book Nook are documented here. Releases follow
 [Semantic Versioning](https://semver.org/) and changes use Conventional Commits.
 
+## [0.8.0](https://github.com/Neurotoxin53/Book-Nook/compare/v0.7.0...v0.8.0) (2026-08-28)
+
+
+### Features
+
+* ship My Book Nook private beta ([deaa155](https://github.com/Neurotoxin53/Book-Nook/commit/deaa155741180cd938d12addf10a06854703fc26))
+
+
+### Bug Fixes
+
+* package D1 migration for Sites ([91edd90](https://github.com/Neurotoxin53/Book-Nook/commit/91edd9080819994668bd4ad67c7877f86b891aa4))
+
 ## [0.7.0] - 2026-08-27
 
 ### Added
