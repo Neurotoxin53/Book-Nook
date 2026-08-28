@@ -75,8 +75,9 @@ Production requires these private Site environment variables:
   custom-domain migration.
 
 The initial Site owner can open **Unlock with passkey → Use invitation → Site
-owner setup** to issue the first signed invitation. The server still checks the
-Sites-authenticated account header and allowlist before it returns a token.
+owner setup** to issue the first signed invitation while the account database is
+empty. The server requires the Sites-authenticated identity for that one-time
+bootstrap and enforces the configured admin allowlist after registration.
 
 ## Data and privacy boundaries
 
