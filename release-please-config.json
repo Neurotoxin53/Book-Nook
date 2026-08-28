@@ -1,0 +1,11 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "my-book-nook",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false
+    }
+  }
+}
+
