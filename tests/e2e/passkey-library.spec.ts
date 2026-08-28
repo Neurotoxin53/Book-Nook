@@ -185,9 +185,17 @@ test('passkey-only account protects a durable library and recovers safely', asyn
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByText('You’re exploring the demo shelf.')).toBeVisible();
 
+  await primaryAuthenticator.cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
+    authenticatorId: primaryAuthenticator.authenticatorId,
+    enabled: false,
+  });
   await page.getByRole('button', { name: 'Unlock with passkey' }).first().click();
   await expect(page.getByLabel('Saved passkey')).toHaveAttribute('autocomplete', 'username webauthn');
   await page.getByRole('button', { name: 'Continue with a passkey' }).click();
+  await primaryAuthenticator.cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
+    authenticatorId: primaryAuthenticator.authenticatorId,
+    enabled: true,
+  });
   await expect(page.getByText('Virtual Reader’s library')).toBeVisible();
   await page.getByRole('button', { name: 'Settings and about' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
