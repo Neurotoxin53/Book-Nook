@@ -161,7 +161,7 @@ test('passkey-only account protects a durable library and recovers safely', asyn
   await page.getByRole('button', { name: 'Back to my library' }).click();
   await loadGoodreadsCsv();
   await expect(page.getByRole('heading', { name: '0 books added' })).toBeVisible();
-  await expect(page.getByText('1 unchanged')).toBeVisible();
+  await expect(page.getByText('1 unchanged · 0 protected conflicts · 0 skipped')).toBeVisible();
   await page.getByRole('button', { name: 'Back to my library' }).click();
 
   await page.getByRole('button', { name: 'Settings and about' }).click();
