@@ -37,7 +37,14 @@ export const api = {
     return requestJson<{ candidates: BookLookupCandidate[]; strategy: string; manualAllowed: true }>(`/api/lookup?${params}`);
   },
   workDetails: (workKey: string) => requestJson<{ synopsis: string; subjects: string[] }>(`/api/lookup?workKey=${encodeURIComponent(workKey)}`),
-  importChunk: (body: { jobId?: string; totalRows: number; rows: GoodreadsNormalizedRow[]; finalize: boolean }) => requestJson<{ summary: ImportSummary }>('/api/imports', { method: 'POST', body: JSON.stringify(body) }),
+  importChunk: (body: {
+    jobId?: string;
+    totalRows: number;
+    rows: GoodreadsNormalizedRow[];
+    finalize: boolean;
+    resumeRowNumber?: number;
+    resumeFingerprint?: string;
+  }) => requestJson<{ summary: ImportSummary }>('/api/imports', { method: 'POST', body: JSON.stringify(body) }),
   undoImport: (jobId: string) => requestJson<{ undone: true; removed?: number }>(`/api/imports/${encodeURIComponent(jobId)}/undo`, { method: 'POST' }),
   migrateLocal: (payload: unknown) => requestJson<{ migrationId: string; imported: number; confirmedAt: string; alreadyMigrated: boolean }>('/api/migrate-local', { method: 'POST', body: JSON.stringify(payload) }),
   passkeys: () => requestJson<{ passkeys: Array<{ id: string; name: string; deviceType: string; backedUp: boolean; createdAt: string; lastUsedAt: string | null }> }>('/api/passkeys'),

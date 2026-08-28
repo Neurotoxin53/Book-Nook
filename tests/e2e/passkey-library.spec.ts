@@ -118,6 +118,52 @@ test('passkey-only account protects a durable library and recovers safely', asyn
   expect(library.books.some((book) => book.work.title === 'The Virtual Garden')).toBe(true);
 
   await page.getByRole('button', { name: 'Library', exact: true }).click();
+  const goodreadsCsv = [
+    'Book Id,Title,Author,Additional Authors,ISBN,ISBN13,My Rating,My Review,Date Read,Date Added,Bookshelves,Exclusive Shelf',
+    '424242,Acceptance Import,Zoë Author,,="0306406152",="9780306406157",5,"First line — café.',
+    'Second line: 東京 and emoji 🌙.",08/12/2026,2026/08/01,"favorites, autumn",read',
+  ].join('\n');
+  const importPayloads: Array<{ rows?: unknown[] }> = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/imports')) {
+      importPayloads.push(request.postDataJSON() as { rows?: unknown[] });
+    }
+  });
+
+  const loadGoodreadsCsv = async () => {
+    await page.getByRole('button', { name: 'Import', exact: true }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'acceptance-goodreads.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(goodreadsCsv),
+    });
+    await expect(page.getByText('1 rows from acceptance-goodreads.csv')).toBeVisible();
+    await page.getByRole('button', { name: 'Import confirmed books' }).click();
+  };
+
+  await loadGoodreadsCsv();
+  await expect(page.getByRole('heading', { name: '1 book added' })).toBeVisible();
+  expect(importPayloads[0]?.rows).toHaveLength(0);
+  expect(importPayloads[1]?.rows).toHaveLength(1);
+  const importedLibraryResponse = await page.request.get(`${BASE_URL}/api/library`);
+  const importedLibrary = await importedLibraryResponse.json() as {
+    books: Array<{ work: { title: string }; review: { body: string } }>;
+  };
+  expect(importedLibrary.books.find((book) => book.work.title === 'Acceptance Import')?.review.body)
+    .toBe('First line — café.\nSecond line: 東京 and emoji 🌙.');
+  await page.getByRole('button', { name: 'Undo this import' }).click();
+  await expect(page.getByRole('heading', { name: 'Import undone' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to my library' }).click();
+  await expect(page.getByRole('button', { name: /Acceptance Import Zoë Author/i })).toHaveCount(0);
+
+  await loadGoodreadsCsv();
+  await expect(page.getByRole('heading', { name: '1 book added' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to my library' }).click();
+  await loadGoodreadsCsv();
+  await expect(page.getByRole('heading', { name: '0 books added' })).toBeVisible();
+  await expect(page.getByText('1 unchanged')).toBeVisible();
+  await page.getByRole('button', { name: 'Back to my library' }).click();
+
   await page.getByRole('button', { name: 'Settings and about' }).click();
   await primaryAuthenticator.cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
     authenticatorId: primaryAuthenticator.authenticatorId,
@@ -139,9 +185,17 @@ test('passkey-only account protects a durable library and recovers safely', asyn
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.getByText('You’re exploring the demo shelf.')).toBeVisible();
 
+  await primaryAuthenticator.cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
+    authenticatorId: primaryAuthenticator.authenticatorId,
+    enabled: false,
+  });
   await page.getByRole('button', { name: 'Unlock with passkey' }).first().click();
   await expect(page.getByLabel('Saved passkey')).toHaveAttribute('autocomplete', 'username webauthn');
   await page.getByRole('button', { name: 'Continue with a passkey' }).click();
+  await primaryAuthenticator.cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
+    authenticatorId: primaryAuthenticator.authenticatorId,
+    enabled: true,
+  });
   await expect(page.getByText('Virtual Reader’s library')).toBeVisible();
   await page.getByRole('button', { name: 'Settings and about' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();

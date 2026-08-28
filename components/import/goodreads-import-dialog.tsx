@@ -7,6 +7,8 @@ import { api } from '@/lib/client/api';
 import type { GoodreadsNormalizedRow, ImportSummary } from '@/lib/domain/types';
 import { parseGoodreadsCsv, summarizeGoodreadsRows } from '@/lib/import/goodreads';
 
+const IMPORT_CHUNK_SIZE = 20;
+
 export function GoodreadsImportDialog({
   onClose,
   onImported,
@@ -55,9 +57,20 @@ export function GoodreadsImportDialog({
     setError('');
     setProgress(0);
     let jobId: string | undefined;
+    let latestSummary: ImportSummary | null = null;
     try {
-      for (let index = 0; index < prepared.length; index += 100) {
-        const chunk = prepared.slice(index, index + 100);
+      const firstRow = prepared[0];
+      const started = await api.importChunk({
+        totalRows: prepared.length,
+        rows: [],
+        finalize: false,
+        resumeRowNumber: firstRow.rowNumber,
+        resumeFingerprint: firstRow.fingerprint,
+      });
+      jobId = started.summary.jobId;
+      latestSummary = started.summary;
+      for (let index = 0; index < prepared.length; index += IMPORT_CHUNK_SIZE) {
+        const chunk = prepared.slice(index, index + IMPORT_CHUNK_SIZE);
         const result = await api.importChunk({
           jobId,
           totalRows: prepared.length,
@@ -65,9 +78,10 @@ export function GoodreadsImportDialog({
           finalize: index + chunk.length >= prepared.length,
         });
         jobId = result.summary.jobId;
-        setSummary(result.summary);
+        latestSummary = result.summary;
         setProgress(Math.round(((index + chunk.length) / prepared.length) * 100));
       }
+      setSummary(latestSummary);
       await onImported();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The import stopped before it finished. Reopening the same file is safe.');
