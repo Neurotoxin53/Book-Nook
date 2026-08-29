@@ -50,6 +50,8 @@ describe('Open Library batch enrichment', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const requestUrl = new URL(fetchMock.mock.calls[0][0]);
     expect(requestUrl.searchParams.get('q')).toBe('isbn:(9780439023528 OR 9780316067928)');
+    expect(requestUrl.searchParams.get('fields')).toContain('editions.isbn');
+    expect(requestUrl.searchParams.get('fields')).toContain('editions.cover_i');
     expect(results.get('9780439023528')).toMatchObject({
       title: 'The Hunger Games',
       isbn10: '0439023521',
