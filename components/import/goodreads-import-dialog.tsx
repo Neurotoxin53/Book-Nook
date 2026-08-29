@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { AlertCircle, Check, FileSpreadsheet, Import, RotateCcw, ShieldCheck, Upload } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
-import { api } from '@/lib/client/api';
+import { api, enrichLibraryMetadata } from '@/lib/client/api';
 import type { GoodreadsNormalizedRow, ImportSummary } from '@/lib/domain/types';
 import { parseGoodreadsCsv, summarizeGoodreadsRows } from '@/lib/import/goodreads';
 
@@ -82,6 +82,7 @@ export function GoodreadsImportDialog({
         setProgress(Math.round(((index + chunk.length) / prepared.length) * 100));
       }
       setSummary(latestSummary);
+      if (latestSummary?.imported) await enrichLibraryMetadata().catch(() => undefined);
       await onImported();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The import stopped before it finished. Reopening the same file is safe.');

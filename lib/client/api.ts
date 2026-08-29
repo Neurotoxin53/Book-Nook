@@ -32,6 +32,12 @@ export const api = {
   createBook: (book: CreateBookInput) => requestJson<{ book: BookRecord }>('/api/library', { method: 'POST', body: JSON.stringify(book) }),
   updateBook: (entryId: string, update: UpdateBookInput) => requestJson<{ book: BookRecord }>(`/api/library/${encodeURIComponent(entryId)}`, { method: 'PATCH', body: JSON.stringify(update) }),
   deleteBook: (entryId: string) => requestJson<{ deleted: true }>(`/api/library/${encodeURIComponent(entryId)}`, { method: 'DELETE' }),
+  enrichLibraryPage: (cursor?: string) => requestJson<{
+    processed: number;
+    matched: number;
+    updated: number;
+    nextCursor: string | null;
+  }>('/api/library/enrich', { method: 'POST', body: JSON.stringify({ cursor }) }),
   lookup: (query: { isbn?: string; title?: string; author?: string }) => {
     const params = new URLSearchParams(Object.entries(query).flatMap(([key, value]) => value?.trim() ? [[key, value.trim()]] : []));
     return requestJson<{ candidates: BookLookupCandidate[]; strategy: string; manualAllowed: true }>(`/api/lookup?${params}`);
@@ -59,6 +65,23 @@ export const api = {
   },
   deleteAccount: () => requestJson<{ deleted: true }>('/api/account', { method: 'DELETE' }),
 };
+
+export async function enrichLibraryMetadata() {
+  let cursor: string | undefined;
+  let processed = 0;
+  let matched = 0;
+  let updated = 0;
+  for (let page = 0; page < 10; page += 1) {
+    const result = await api.enrichLibraryPage(cursor);
+    processed += result.processed;
+    matched += result.matched;
+    updated += result.updated;
+    if (!result.nextCursor) return { processed, matched, updated, complete: true };
+    cursor = result.nextCursor;
+    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+  }
+  return { processed, matched, updated, complete: false };
+}
 
 export async function authenticateWithPasskey(useBrowserAutofill = false) {
   const begin = await requestJson<{ options: PublicKeyCredentialRequestOptionsJSON; challengeId: string }>(

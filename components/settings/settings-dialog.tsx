@@ -16,7 +16,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
-import { addPasskey, api, authenticateWithPasskey, type SessionState } from '@/lib/client/api';
+import { addPasskey, api, authenticateWithPasskey, enrichLibraryMetadata, type SessionState } from '@/lib/client/api';
 import { makeLocalMigrationPayload, markLocalMigrationConfirmed, readLegacyBooks } from '@/lib/migration/local';
 import { APP_VERSION } from '@/lib/version';
 
@@ -115,6 +115,18 @@ export function SettingsDialog({
                   <button className="primary-action" type="button" disabled={busy === 'migrate'} onClick={() => void run('migrate', async () => { const payload = await makeLocalMigrationPayload(); if (!payload) throw new Error('No local books are ready to migrate.'); const receipt = await api.migrateLocal(payload); markLocalMigrationConfirmed(receipt); await onLibraryChanged(); setMessage(`${receipt.imported} local book${receipt.imported === 1 ? '' : 's'} confirmed in your account.`); })}><Download aria-hidden="true" />Migrate local books</button>
                 </section>
               )}
+
+              <section className="settings-section" aria-labelledby="book-details-title">
+                <span className="eyebrow">Library maintenance</span>
+                <h3 id="book-details-title">Covers & book details</h3>
+                <p className="settings-explainer">Find missing covers, publication details, subjects, and Open Library identifiers for Goodreads books with an ISBN. Existing information and your edits stay untouched.</p>
+                <button className="secondary-action" type="button" disabled={busy === 'enrich'} onClick={() => void run('enrich', async () => {
+                  const result = await enrichLibraryMetadata();
+                  await onLibraryChanged();
+                  if (result.updated) setMessage(`Added covers and details to ${result.updated} book${result.updated === 1 ? '' : 's'}.${result.complete ? '' : ' Run it again to continue.'}`);
+                  else setMessage(result.processed ? 'No new Open Library matches were found.' : 'Your ISBN-matched Goodreads books already have details.');
+                })}><RefreshCcw aria-hidden="true" />{busy === 'enrich' ? 'Finding details…' : 'Find missing details'}</button>
+              </section>
 
               <section className="settings-section invitation-section" aria-labelledby="invite-title">
                 <span className="eyebrow">Owner tools</span>
