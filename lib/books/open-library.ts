@@ -26,6 +26,7 @@ type OpenLibraryEditionDocument = {
   key?: string;
   title?: string;
   subtitle?: string;
+  description?: string | { value?: string };
   publisher?: string[];
   publish_date?: string[];
   isbn?: string[];
@@ -65,6 +66,16 @@ const BATCH_SEARCH_FIELDS = [
   'subject',
   'description',
   'editions',
+  'editions.key',
+  'editions.title',
+  'editions.subtitle',
+  'editions.description',
+  'editions.publisher',
+  'editions.publish_date',
+  'editions.isbn',
+  'editions.language',
+  'editions.number_of_pages',
+  'editions.cover_i',
 ].join(',');
 
 const OPEN_LIBRARY_USER_AGENT = 'MyBookNook/0.7 (+https://github.com/Neurotoxin53/Book-Nook)';
@@ -123,6 +134,7 @@ function toIsbnCandidate(document: OpenLibraryDocument, isbn: string): BookLooku
     ...document,
     title: edition.title || document.title,
     subtitle: edition.subtitle || document.subtitle,
+    description: document.description ?? edition.description,
     publisher: edition.publisher,
     publish_date: edition.publish_date,
     isbn: edition.isbn,
