@@ -4,6 +4,7 @@ import { normalizeIsbn } from '@/lib/books/isbn';
 import type {
   Appearance,
   BookEdition,
+  BookLookupCandidate,
   BookRecord,
   BookWork,
   Contributor,
@@ -224,6 +225,178 @@ export async function getLibraryRecord(userId: string, entryId: string) {
       `${SELECT_LIBRARY} WHERE l.user_id = ? AND l.id = ? AND l.deleted_at IS NULL`,
     ).bind(userId, entryId).first<LibraryRow>();
     return row ? rowToRecord(row) : null;
+  });
+}
+
+export type LibraryEnrichmentTarget = {
+  entryId: string;
+  title: string;
+  author?: string;
+  isbn: string;
+};
+
+export async function listLibraryEnrichmentTargets(userId: string, cursor = '', limit = 30) {
+  return withDatabase(async (database) => {
+    const result = await database.prepare(
+      `SELECT l.id AS entry_id, w.title, e.contributors_json, e.isbn10, e.isbn13
+       FROM library_entry l
+       JOIN book_edition e ON e.id = l.edition_id
+       JOIN book_work w ON w.id = e.work_id
+       WHERE l.user_id = ?
+         AND l.source = 'goodreads'
+         AND l.deleted_at IS NULL
+         AND l.id > ?
+         AND (e.isbn13 IS NOT NULL OR e.isbn10 IS NOT NULL)
+         AND e.source_ids_json = '{}'
+       ORDER BY l.id
+       LIMIT ?`,
+    ).bind(userId, cursor, Math.max(1, Math.min(30, limit))).all<{
+      entry_id: string;
+      title: string;
+      contributors_json: string;
+      isbn10: string | null;
+      isbn13: string | null;
+    }>();
+    return result.results.map((row): LibraryEnrichmentTarget => ({
+      entryId: row.entry_id,
+      title: row.title,
+      author: parseJson<Contributor[]>(row.contributors_json, [])[0]?.name,
+      isbn: row.isbn13 ?? row.isbn10 as string,
+    }));
+  });
+}
+
+export async function enrichLibraryRecord(userId: string, entryId: string, candidate: BookLookupCandidate) {
+  return withDatabase(async (database) => {
+    const row = await database.prepare(
+      `SELECT l.edition_id, e.work_id, w.title, w.subtitle, w.synopsis, w.subjects_json,
+              w.first_published_date, w.provenance_json AS work_provenance,
+              e.contributors_json, e.isbn10, e.isbn13, e.publisher, e.published_date,
+              e.language, e.page_count, e.cover_url, e.source_ids_json,
+              e.provenance_json AS edition_provenance, g.user_locked
+       FROM library_entry l
+       JOIN book_edition e ON e.id = l.edition_id
+       JOIN book_work w ON w.id = e.work_id
+       JOIN genre_assignment g ON g.work_id = w.id
+       WHERE l.id = ? AND l.user_id = ? AND l.deleted_at IS NULL`,
+    ).bind(entryId, userId).first<{
+      edition_id: string;
+      work_id: string;
+      title: string;
+      subtitle: string | null;
+      synopsis: string;
+      subjects_json: string;
+      first_published_date: string | null;
+      work_provenance: string;
+      contributors_json: string;
+      isbn10: string | null;
+      isbn13: string | null;
+      publisher: string | null;
+      published_date: string | null;
+      language: string | null;
+      page_count: number | null;
+      cover_url: string | null;
+      source_ids_json: string;
+      edition_provenance: string;
+      user_locked: number;
+    }>();
+    if (!row) return false;
+
+    const timestamp = nowIso();
+    const workSourceId = candidate.sourceIds.work;
+    const editionSourceId = candidate.sourceIds.edition ?? workSourceId;
+    const fieldProvenance = (sourceId?: string): FieldProvenance => ({ source: 'open-library', sourceId, importedAt: timestamp });
+    const workProvenance = parseJson<Record<string, FieldProvenance>>(row.work_provenance, {});
+    const editionProvenance = parseJson<Record<string, FieldProvenance>>(row.edition_provenance, {});
+    const existingSubjects = parseJson<string[]>(row.subjects_json, []);
+    const subjects = existingSubjects.length ? undefined : candidate.subjects.slice(0, 60);
+    const subtitle = row.subtitle ? undefined : candidate.subtitle;
+    const synopsis = row.synopsis ? undefined : candidate.synopsis;
+    const firstPublishedDate = row.first_published_date ? undefined : candidate.firstPublishedDate;
+    const statements: D1PreparedStatement[] = [];
+
+    if (subtitle || synopsis || subjects?.length || firstPublishedDate) {
+      if (subtitle) workProvenance.subtitle = fieldProvenance(workSourceId);
+      if (synopsis) workProvenance.synopsis = fieldProvenance(workSourceId);
+      if (subjects?.length) workProvenance.subjects = fieldProvenance(workSourceId);
+      if (firstPublishedDate) workProvenance.firstPublishedDate = fieldProvenance(workSourceId);
+      statements.push(database.prepare(
+        `UPDATE book_work SET subtitle = COALESCE(?, subtitle), synopsis = COALESCE(?, synopsis),
+          subjects_json = COALESCE(?, subjects_json), first_published_date = COALESCE(?, first_published_date),
+          provenance_json = ?, updated_at = ? WHERE id = ?`,
+      ).bind(
+        subtitle?.trim().slice(0, 300) || null,
+        synopsis?.trim().slice(0, 20_000) || null,
+        subjects?.length ? JSON.stringify(subjects) : null,
+        firstPublishedDate || null,
+        JSON.stringify(workProvenance),
+        timestamp,
+        row.work_id,
+      ));
+    }
+
+    const existingContributors = parseJson<Contributor[]>(row.contributors_json, []);
+    const contributors = existingContributors.length ? undefined : candidate.contributors;
+    const isbn10 = row.isbn10 ? undefined : candidate.isbn10;
+    const isbn13 = row.isbn13 ? undefined : candidate.isbn13;
+    const publisher = row.publisher ? undefined : candidate.publisher;
+    const publishedDate = row.published_date ? undefined : candidate.publishedDate;
+    const language = row.language ? undefined : candidate.language;
+    const pageCount = row.page_count ? undefined : candidate.pageCount;
+    const coverUrl = row.cover_url ? undefined : candidate.coverUrl;
+    const sourceIds = { ...parseJson<Record<string, string>>(row.source_ids_json, {}), ...candidate.sourceIds };
+    const sourceIdsChanged = JSON.stringify(sourceIds) !== JSON.stringify(parseJson<Record<string, string>>(row.source_ids_json, {}));
+    const editionChanged = Boolean(
+      contributors?.length || isbn10 || isbn13 || publisher || publishedDate || language || pageCount || coverUrl || sourceIdsChanged,
+    );
+    if (editionChanged) {
+      if (contributors?.length) editionProvenance.contributors = fieldProvenance(editionSourceId);
+      if (isbn10) editionProvenance.isbn10 = fieldProvenance(editionSourceId);
+      if (isbn13) editionProvenance.isbn13 = fieldProvenance(editionSourceId);
+      if (publisher) editionProvenance.publisher = fieldProvenance(editionSourceId);
+      if (publishedDate) editionProvenance.publishedDate = fieldProvenance(editionSourceId);
+      if (language) editionProvenance.language = fieldProvenance(editionSourceId);
+      if (pageCount) editionProvenance.pageCount = fieldProvenance(editionSourceId);
+      if (coverUrl) editionProvenance.coverUrl = fieldProvenance(editionSourceId);
+      statements.push(database.prepare(
+        `UPDATE book_edition SET contributors_json = COALESCE(?, contributors_json), isbn10 = COALESCE(?, isbn10),
+          isbn13 = COALESCE(?, isbn13), publisher = COALESCE(?, publisher), published_date = COALESCE(?, published_date),
+          language = COALESCE(?, language), page_count = COALESCE(?, page_count), cover_url = COALESCE(?, cover_url),
+          source_ids_json = ?, provenance_json = ?, updated_at = ? WHERE id = ?`,
+      ).bind(
+        contributors?.length ? JSON.stringify(contributors) : null,
+        isbn10 ?? null,
+        isbn13 ?? null,
+        publisher?.trim().slice(0, 300) || null,
+        publishedDate || null,
+        language?.slice(0, 20) || null,
+        pageCount && pageCount > 0 ? Math.round(pageCount) : null,
+        coverUrl?.slice(0, 2_000) || null,
+        JSON.stringify(sourceIds),
+        JSON.stringify(editionProvenance),
+        timestamp,
+        row.edition_id,
+      ));
+    }
+
+    if (subjects?.length && !row.user_locked) {
+      const genre = classifyGenre({ title: row.title, synopsis: synopsis ?? row.synopsis, subjects });
+      statements.push(database.prepare(
+        `UPDATE genre_assignment SET primary_genre = ?, facets_json = ?, confidence = ?, reasons_json = ?,
+          source = 'open-library', updated_at = ? WHERE work_id = ? AND user_locked = 0`,
+      ).bind(
+        genre.primaryGenre,
+        JSON.stringify(genre.facets.slice(0, 2)),
+        genre.confidence,
+        JSON.stringify(genre.reasons),
+        timestamp,
+        row.work_id,
+      ));
+    }
+
+    if (!statements.length) return false;
+    await database.batch(statements);
+    return true;
   });
 }
 
