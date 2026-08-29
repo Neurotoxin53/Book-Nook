@@ -171,10 +171,7 @@ export async function importGoodreadsChunk(
           && existing.body === row.review
           && (existing.finished_at ?? '') === (row.dateRead ?? '');
         if (unchanged) {
-          await database.batch([
-            importRowStatement(database, jobId, row, 'unchanged', existing.entry_id),
-            database.prepare('UPDATE import_job SET skipped_rows = skipped_rows + 1 WHERE id = ?').bind(jobId),
-          ]);
+          await importRowStatement(database, jobId, row, 'unchanged', existing.entry_id).run();
         } else {
           await database.batch([
             importRowStatement(database, jobId, row, 'conflict', existing.entry_id, {
