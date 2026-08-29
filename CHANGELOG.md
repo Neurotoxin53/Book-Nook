@@ -3,6 +3,21 @@
 All notable changes to My Book Nook are documented here. Releases follow
 [Semantic Versioning](https://semver.org/) and changes use Conventional Commits.
 
+## [0.8.0](https://github.com/Neurotoxin53/Book-Nook/compare/v0.7.0...v0.8.0) (2026-08-29)
+
+
+### Features
+
+* **library:** enrich Goodreads book metadata ([b35fefe](https://github.com/Neurotoxin53/Book-Nook/commit/b35fefee52d82cea9adfb593c72a136fa7c0c0c0))
+
+
+### Bug Fixes
+
+* allow initial owner invitation bootstrap ([2271821](https://github.com/Neurotoxin53/Book-Nook/commit/2271821238a617e079e2537c7932686691d2d51c))
+* **import:** resume interrupted Goodreads jobs ([017ed8c](https://github.com/Neurotoxin53/Book-Nook/commit/017ed8c124cb5229b0d8044b186f99c4639d922d))
+* **import:** separate unchanged and skipped rows ([ae48952](https://github.com/Neurotoxin53/Book-Nook/commit/ae4895253f038fffd28f37d20dd12c86b816f06c))
+* **library:** request nested edition metadata ([885b33c](https://github.com/Neurotoxin53/Book-Nook/commit/885b33cc393a0b142613d59033e03651131db18a))
+
 ## [0.7.0] - 2026-08-27
 
 ### Added
